@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Curve Penalty: Hidden Post Prototype</title>
+    <link rel="stylesheet" href="styles.css">
+
+</head>
+
+<body>
+    <div id="app">
+        <div id="phone">
+            <canvas id="game"></canvas>
+            <div class="hud">
+                <div class="chip"><span>Goals</span><b id="score">0</b></div>
+                <div class="chip"><span>Shots</span><b id="shots">10</b></div>
+                <div class="chip"><span>Status</span><b id="status">Ready</b></div>
+            </div>
+            <div class="centerTitle" id="title">
+                
+            </div>
+            <div class="hint" id="hint">Drag from the ball to shoot. The keeper reads every normal shot.</div>
+            <div class="overlay" id="start">
+                <div class="card">
+                    <h2>Impossible Keeper</h2>
+                    <p>A mobile-only penalty game. The keeper calculates your final target and saves every visible shot.
+                        Find a way to break the logic.</p>
+                    <button id="play">START MATCH</button>
+                </div>
+            </div>
+            <div class="toast" id="toast"></div>
+        </div>
+    </div>
+    <script src="script.js"></script>
+
+    
+</body>
+
+</html>
