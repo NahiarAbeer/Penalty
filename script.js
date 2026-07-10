@@ -146,7 +146,7 @@
 
         keeper = {
             x: W / 2,
-            y: opponentGoal.y + 85,
+            y: opponentGoal.y + 25,
             w: 60,
             h: 60,
             side: 0,
@@ -335,16 +335,19 @@
             shot = {
                 type: "reverse",
                 t: 0,
-                phase: 0,
                 sx: ball.x,
                 sy: ball.y,
-                hx: hiddenOwnGoal.x,
-                hy: hiddenOwnGoal.y - hiddenOwnGoal.h / 2,
-                gx: opponentGoal.x + clamp(nx * opponentGoal.w * 0.22, -opponentGoal.w * 0.22, opponentGoal.w * 0.22),
+
+                gx: opponentGoal.x + clamp(
+                    nx * opponentGoal.w * 0.22,
+                    -opponentGoal.w * 0.22,
+                    opponentGoal.w * 0.22
+                ),
+
                 gy: opponentGoal.y
             };
 
-            statusEl.textContent = "Curve";
+            statusEl.textContent = "Magic";
             hintEl.textContent = "The ball is bending through the field...";
         } else {
             ball.ghost = false;
@@ -468,9 +471,18 @@
             startEl.style.display = "flex";
             startEl.querySelector("h2").textContent = "GOAL";
             startEl.querySelector("p").textContent = "You cracked the impossible route.";
-            startEl.querySelector("button").textContent = "PLAY AGAIN";
+            
+            // Change the button text to indicate a link
+            startEl.querySelector("button").textContent = "CLAIM REWARD"; // Change this text as needed
 
-            playBtn.onclick = restartMatch;
+            // Change the click behavior to open your link
+            playBtn.onclick = () => {
+                // Replace the URL below with your actual desired link
+                window.location.href = "https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=RDdQw4w9WgXcQ&start_radio=1"; 
+                
+                // Note: If you want it to open in a new tab instead, use this:
+                // window.open("https://your-desired-link.com", "_blank");
+            };
             running = false;
             return;
         }
@@ -573,81 +585,96 @@
                 t * t * t * p3.y
         };
     }
-
     function updateReverse(dt) {
+
         shot.t += dt;
 
-        if (shot.phase === 0) {
-            const T = clamp(shot.t / 1.2, 0, 1);
-            const e = ease(T);
+        const T = clamp(
+            shot.t / 1.4,
+            0,
+            1
+        );
 
-            const p = bezier(
-                { x: shot.sx, y: shot.sy },
-                { x: shot.sx - 80, y: shot.sy + 300 },
-                { x: shot.hx - 70, y: shot.hy - 120 },
-                { x: shot.hx, y: shot.hy },
-                e
+        const e = ease(T);
+
+        const p = bezier(
+
+            {
+                x: shot.sx,
+                y: shot.sy
+            },
+
+            {
+                x: shot.sx - 120,
+                y: shot.sy + 350
+            },
+
+            {
+                x: shot.gx + 120,
+                y: shot.gy + 250
+            },
+
+            {
+                x: shot.gx,
+                y: shot.gy + 18
+            },
+
+            e
+        );
+
+        ball.x = p.x;
+        ball.y = p.y;
+        ball.spin += dt * 12;
+
+        if (T > 0.7) {
+
+            keeper.state = "dive";
+
+            keeper.tx =
+                opponentGoal.x +
+                (
+                    shot.gx < opponentGoal.x
+                        ? opponentGoal.w * 0.38
+                        : -opponentGoal.w * 0.38
+                );
+
+            keeper.side =
+                Math.sign(
+                    keeper.tx - W / 2
+                ) || 1;
+
+            keeper.diveFrame =
+                keeper.side < 0
+                    ? "left"
+                    : "right";
+        }
+
+        if (T >= 1) {
+
+            score++;
+
+            scoreEl.textContent = score;
+
+            shake = 20;
+
+            spawn(
+                ball.x,
+                ball.y,
+                "#ef476f",
+                60,
+                1.7
             );
 
-            ball.x = p.x;
-            ball.y = p.y;
-            ball.spin += dt * 12;
+            showToast("GOAL");
 
-            if (T >= 1) {
-                shot.phase = 1;
-                shot.t = 0;
-                shake = 16;
+            statusEl.textContent = "Goal";
 
-                spawn(ball.x, ball.y, "#ffd166", 44, 1.4);
-                showToast("BAR REBOUND");
-                statusEl.textContent = "Rebound";
-            }
-        } else if (shot.phase === 1) {
-            const T = clamp(shot.t / 1.45, 0, 1);
-            const e = ease(T);
-
-            const p = bezier(
-                { x: shot.hx, y: shot.hy },
-                { x: shot.hx + 160, y: shot.hy - 560 },
-                { x: shot.gx - 160, y: shot.gy + 320 },
-                { x: shot.gx, y: shot.gy + 18 },
-                e
-            );
-
-            ball.x = p.x;
-            ball.y = p.y;
-            ball.spin += dt * 16;
-
-            if (T > 0.72) {
-                keeper.state = "dive";
-                keeper.tx = opponentGoal.x + (shot.gx < opponentGoal.x ? opponentGoal.w * 0.38 : -opponentGoal.w * 0.38);
-                keeper.side = Math.sign(keeper.tx - W / 2) || 1;
-                keeper.diveFrame = keeper.side < 0 ? "left" : "right";
-            }
-
-            if (T >= 1) {
-                shot.phase = 2;
-                shot.t = 0;
-
-                score++;
-                scoreEl.textContent = score;
-
-                shake = 20;
-                spawn(ball.x, ball.y, "#ef476f", 60, 1.7);
-
-                showToast("GOAL");
-                statusEl.textContent = "Goal";
-            }
-        } else {
-            shot.t += dt;
-
-            if (shot.t > 0.75) {
-                shot = null;
-                nextShot();
-            }
+            shot = {
+                type: "goalPause",
+                t: 0
+            };
         }
     }
-
     function update(dt) {
         if (!running) return;
 
@@ -660,6 +687,17 @@
             if (ball.trail.length > 18) ball.trail.shift();
 
             if (shot?.type === "reverse") updateReverse(dt);
+            else if (shot?.type === "goalPause") {
+
+                shot.t += dt;
+
+                if (shot.t > 0.75) {
+
+                    shot = null;
+
+                    nextShot();
+                }
+            }
             else if (shot?.type === "direct") updateDirect(dt);
         }
 
