@@ -24,6 +24,7 @@
         ball: loadImage("images/ball_pixel.png")
     };
 
+
     let W = 0;
     let H = 0;
     let DPR = 1;
@@ -57,7 +58,11 @@
 
     const SECRET_ANGLE_DEG = 1;
     const SECRET_POWER = 0.95;
-
+    const BALL_SPAWN_WORLD_Y = 800;
+    const OPPONENT_GOAL_WORLD_Y = 520;
+    const HIDDEN_GOAL_WORLD_Y = 2200;
+    const BALL_IDLE_SCREEN_Y_RATIO = 0.68;
+    const DIRECT_SHOT_MAX_DISTANCE = 1000;
     const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
     const lerp = (a, b, t) => a + (b - a) * t;
     const ease = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
@@ -90,11 +95,9 @@
     }
 
     function buildWorld() {
-        const ballSpawnY = 640;
-
         opponentGoal = {
             x: W / 2,
-            y: ballSpawnY - 280,
+            y: OPPONENT_GOAL_WORLD_Y,
             w: Math.min(W * 0.75, 320),
             h: 90,
             depth: 36
@@ -102,7 +105,7 @@
 
         hiddenOwnGoal = {
             x: W / 2,
-            y: ballSpawnY + 900,
+            y: HIDDEN_GOAL_WORLD_Y,
             w: opponentGoal.w,
             h: opponentGoal.h,
             depth: opponentGoal.depth
@@ -110,7 +113,7 @@
 
         ball = {
             x: W / 2,
-            y: ballSpawnY,
+            y: BALL_SPAWN_WORLD_Y,
             r: 8,
             vx: 0,
             vy: 0,
@@ -122,25 +125,22 @@
 
         player = {
             x: ball.x - 55,
-            y: ball.y + 12,
+            y: ball.y + 120,
 
             startX: ball.x - 55,
-            startY: ball.y + 12,
+            startY: ball.y + 120,
 
-            targetX: ball.x - 12,
-            targetY: ball.y + 4,
+            targetX: ball.x - 6,
+            targetY: ball.y + 8,
 
             w: 64,
             h: 96,
 
             frame: "idle",
-
             bob: 0,
             sway: 0,
-
             runT: 0,
             runDuration: 0,
-
             running: false
         };
 
@@ -153,22 +153,20 @@
             startX: W / 2,
             tx: W / 2,
             state: "idle",
-            diveFrame: "idle",
+            diveFrame: "idle"
         };
     }
 
     function resetBall(instant = false) {
-        const spawnY = 900;
 
         ball.x = W / 2;
-        ball.y = spawnY;
+        ball.y = BALL_SPAWN_WORLD_Y;
         ball.vx = 0;
         ball.vy = 0;
         ball.moving = false;
         ball.ghost = false;
         ball.trail = [];
         ball.spin = 0;
-
         resetPlayerPosition();
 
         keeper.x = W / 2;
@@ -182,9 +180,12 @@
         shot = null;
         kickQueued = false;
         kickTimer = 0;
+        targetCameraY =
+            ball.y - H * BALL_IDLE_SCREEN_Y_RATIO;
 
-        targetCameraY = ball.y - H * 0.55;
-        if (instant) cameraY = targetCameraY;
+        if (instant) {
+            cameraY = targetCameraY;
+        }
 
         zoom = 1;
         statusEl.textContent = "Ready";
@@ -225,7 +226,7 @@
             "Huh, You couldn't crack the code as a BUETian. SHAME SHAME!!!!!!!",
             () => {
                 showQuote(
-                    "Why can't we go backwards, for once? Backwards, really fast. Fast as we can. Really put the pedal to the metal, you know?",
+                    "Why can't we go backwards, for once? Backwards, really fast. Fast as we can. Really put the pedal to the metal, you know?\n--ReadyPlayerOne",
                     () => {
                         restartMatch();
                     }
@@ -347,6 +348,10 @@
             hintEl.textContent = "The ball is bending through the field...";
         } else {
             ball.ghost = false;
+
+            // 1% chance for an unstoppable direct hit
+            const isLuckyGoal = Math.random() < 0.01;
+
             ball.vx = nx * power * 0.5;
             ball.vy = ny * power;
             ball.spin = clamp(nx * 2.2, -2.2, 2.2);
@@ -354,20 +359,108 @@
             shot = {
                 type: "direct",
                 saved: false,
+                isLuckyGoal: isLuckyGoal,
                 savedTimer: 0,
                 t: 0
             };
 
             keeper.state = "dive";
-            keeper.tx = clamp(ball.x + ball.vx * 0.45, opponentGoal.x - opponentGoal.w * 0.42, opponentGoal.x + opponentGoal.w * 0.42);
-            keeper.side = Math.sign(keeper.tx - W / 2) || 1;
-            keeper.diveFrame = keeper.side < 0 ? "left" : "right";
 
-            hintEl.textContent = "Saved";
+            if (isLuckyGoal) {
+                // Force trajectory into a corner so the 1% chance isn't wasted by bad aim
+                const timeToGoal = Math.abs((opponentGoal.y - ball.y) / ball.vy);
+                const targetCornerX = opponentGoal.x + (Math.random() > 0.5 ? 1 : -1) * (opponentGoal.w * 0.4);
+                ball.vx = (targetCornerX - ball.x) / timeToGoal;
+                ball.spin = 0; // Remove spin to keep trajectory clean
+
+                // Keeper dives the wrong way
+                keeper.tx = opponentGoal.x + (ball.vx > 0 ? -1 : 1) * opponentGoal.w * 0.4;
+                keeper.side = Math.sign(keeper.tx - W / 2) || 1;
+                keeper.diveFrame = keeper.side < 0 ? "left" : "right";
+
+                hintEl.textContent = "Unstoppable Strike!";
+            } else {
+                // Normal block
+                keeper.tx = clamp(ball.x + ball.vx * 0.45, opponentGoal.x - opponentGoal.w * 0.42, opponentGoal.x + opponentGoal.w * 0.42);
+                keeper.side = Math.sign(keeper.tx - W / 2) || 1;
+                keeper.diveFrame = keeper.side < 0 ? "left" : "right";
+
+                hintEl.textContent = "Saved";
+            }
         }
 
         aimData = null;
         kickQueued = false;
+    }
+
+    function updateDirect(dt) {
+        if (shot.saved && !shot.isLuckyGoal) {
+            shot.savedTimer += dt;
+            ball.x = keeper.x;
+            ball.y = keeper.y;
+            ball.vx = 0;
+            ball.vy = 0;
+
+            if (shot.savedTimer > 0.8) {
+                shot = null;
+                nextShot();
+            }
+            return;
+        }
+
+        ball.vx += ball.spin * 220 * dt;
+        ball.x += ball.vx * dt;
+        ball.y += ball.vy * dt;
+        ball.spin += ball.vx * dt * 0.04;
+        ball.vx *= 0.995;
+
+        const saveLine = keeper.y + 4;
+
+        // Normal save collision (ignored if it's a lucky goal)
+        if (!shot.isLuckyGoal && !shot.saved && ball.y < saveLine + 22 && ball.y > saveLine - 38) {
+            shot.saved = true;
+            shot.savedTimer = 0;
+            ball.x = keeper.x;
+            ball.y = keeper.y;
+            ball.vx = 0;
+            ball.vy = 0;
+
+            shake = 10;
+            spawn(ball.x, ball.y, "#06d6a0", 24, 1.1);
+
+            showToast("SAVED");
+            statusEl.textContent = "Saved";
+            return;
+        }
+
+        // Direct Goal Detection
+        if (shot.isLuckyGoal && ball.y <= opponentGoal.y + 10 && !shot.scored) {
+            shot.scored = true; // Prevent multiple triggers
+            ball.vx *= 0.1; // Slow down ball inside the net
+            ball.vy *= 0.1;
+
+            score++;
+            scoreEl.textContent = score;
+
+            shake = 20;
+            spawn(ball.x, ball.y, "#ef476f", 60, 1.7);
+
+            showToast("DIRECT GOAL!");
+            statusEl.textContent = "Goal";
+
+            setTimeout(() => {
+                shot = null;
+                nextShot();
+            }, 1200);
+            return;
+        }
+
+        const tooFarFromSpawn = Math.abs(ball.y - BALL_SPAWN_WORLD_Y) > 1200;
+
+        if (!shot.scored && (tooFarFromSpawn || ball.x < -100 || ball.x > W + 100)) {
+            shot = null;
+            setTimeout(nextShot, 350);
+        }
     }
 
     function nextShot() {
@@ -448,7 +541,7 @@
     function resetPlayerPosition() {
 
         player.startX = ball.x - 55;
-        player.startY = ball.y + 170;
+        player.startY = ball.y + 120;
 
         player.targetX = ball.x - 6;
         player.targetY = ball.y + 8;
@@ -462,71 +555,7 @@
         player.frame = "idle";
     }
 
-    function updateDirect(dt) {
 
-        if (shot.saved) {
-
-            shot.savedTimer += dt;
-
-            ball.x = keeper.x;
-            ball.y = keeper.y;
-
-            ball.vx = 0;
-            ball.vy = 0;
-
-            if (shot.savedTimer > 0.8) {
-                shot = null;
-                nextShot();
-            }
-
-            return;
-        }
-
-        ball.vx += ball.spin * 220 * dt;
-        ball.x += ball.vx * dt;
-        ball.y += ball.vy * dt;
-        ball.spin += ball.vx * dt * 0.04;
-        ball.vx *= 0.995;
-        const saveLine = keeper.y + 4;
-
-        if (!shot.saved &&
-            ball.y < saveLine + 22 &&
-            ball.y > saveLine - 38) {
-
-            shot.saved = true;
-            shot.savedTimer = 0;
-
-            ball.x = keeper.x;
-            ball.y = keeper.y;
-
-            ball.vx = 0;
-            ball.vy = 0;
-
-            shake = 10;
-
-            spawn(
-                ball.x,
-                ball.y,
-                "#06d6a0",
-                24,
-                1.1
-            );
-
-            showToast("SAVED");
-            statusEl.textContent = "Saved";
-
-            return;
-        }
-
-        if (
-            ball.y > 980 ||
-            ball.x < -100 ||
-            ball.x > W + 100
-        ) {
-            shot = null;
-            setTimeout(nextShot, 350);
-        }
-    }
     function bezier(p0, p1, p2, p3, t) {
         const u = 1 - t;
 
@@ -634,17 +663,18 @@
             else if (shot?.type === "direct") updateDirect(dt);
         }
 
-        const cameraFocusY = ball.moving ? ball.y - H * 0.65 : ball.y - H * 0.68;
+        const cameraFocusY =
+            ball.moving
+                ? ball.y - H * 0.65
+                : ball.y - H * BALL_IDLE_SCREEN_Y_RATIO;
+
         targetCameraY = cameraFocusY;
 
-        zoom = lerp(
-            zoom,
-            ball.moving || kickQueued
-                ? 1.28
-                : 1.15,
-            0.05
+        cameraY = lerp(
+            cameraY,
+            targetCameraY,
+            ball.moving ? 0.105 : 0.16
         );
-        cameraY = lerp(cameraY, targetCameraY, 0.105);
 
         shake = Math.max(0, shake - dt * 38);
     }
@@ -666,7 +696,10 @@
     }
 
     function drawPixelCrowd() {
-        const crowdTop = opponentGoal.y - 270;
+        const crowdTop =
+            opponentGoal.y
+            - cameraY
+            - 270;
 
         ctx.fillStyle = "#151515";
         ctx.fillRect(0, crowdTop, W, 220);
@@ -683,41 +716,61 @@
 
     function drawPitchLines() {
         const g = opponentGoal;
-        const goalLineY = g.y + g.h / 2 + g.depth;
+
+        // Accurate goal line placement (front of the goal)
+        const goalLineY = g.y + g.h / 2;
         const sy = goalLineY - cameraY;
 
-        const boxW = Math.min(W * 0.92, 460);
-        const boxH = 520;
+        // Penalty spot = Ball spawn point (800)
+        const penaltySpotWorldY = 800;
+        const penSpotY = penaltySpotWorldY - cameraY;
 
+        // Calculate vertical units based on real football rules (Spot is 12 yards out)
+        const twelveYards = penaltySpotWorldY - goalLineY;
+        const boxH = twelveYards * 1.5;            // 18-yard box height
+        const goalBoxH = twelveYards * 0.5;        // 6-yard box height
+        const arcRadius = twelveYards * (10 / 12); // 10-yard radius for D-box arc
+
+        // Keep horizontal dimensions beautifully responsive
+        const boxW = Math.min(W * 0.92, 460);
         const goalBoxW = Math.min(W * 0.58, 250);
-        const goalBoxH = 140;
-        const markY = goalLineY + 480;
 
         ctx.save();
         ctx.strokeStyle = "rgba(255,255,255,.75)";
         ctx.lineWidth = 2;
         ctx.lineCap = "square";
 
+        // Draw Goal line
         ctx.beginPath();
         ctx.moveTo(20, sy);
         ctx.lineTo(W - 20, sy);
         ctx.stroke();
 
-        ctx.strokeRect(g.x - boxW / 2, sy, boxW, boxH);
+        // Draw 6-yard Goal Box
         ctx.strokeRect(g.x - goalBoxW / 2, sy, goalBoxW, goalBoxH);
 
+        // Draw 18-yard Penalty Box
+        ctx.strokeRect(g.x - boxW / 2, sy, boxW, boxH);
+
+        // Draw Penalty Mark (exactly at the ball's spawn point)
         ctx.fillStyle = "#ffffff";
-        ctx.fillRect(g.x - 3, markY - cameraY - 3, 6, 6);
+        ctx.beginPath();
+        ctx.arc(g.x, penSpotY, 4, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Draw Perfect D-box (Penalty Arc)
+        // Distance from spot to box edge is 6 yards, radius is 10 yards.
+        // The intersection angle is mathematically exactly arccos(6/10) = arccos(0.6)
+        const arcAngle = Math.acos(0.6);
 
         ctx.beginPath();
-        ctx.arc(g.x, markY - cameraY + 50, 30, 0, Math.PI);
-        // ctx.arc(
-        //     g.x,
-        //     markY ,
-        //     30,
-        //     0 * Math.PI / 180,
-        //     180 * Math.PI / 180
-        // );
+        ctx.arc(
+            g.x,
+            penSpotY,
+            arcRadius,
+            Math.PI / 2 - arcAngle, // Start angle
+            Math.PI / 2 + arcAngle  // End angle
+        );
         ctx.stroke();
 
         ctx.restore();
@@ -810,7 +863,6 @@
         ctx.fillRect(x - 18, y - 43, 8, 18);
         ctx.fillRect(x + 10, y - 43, 8, 18);
     }
-
     function drawKeeper() {
         let drawW = keeper.w;
         let drawH = keeper.h;
@@ -818,13 +870,19 @@
         const sy = keeper.y - cameraY;
         if (sy < -140 || sy > H + 140) return;
 
-
         if (keeper.state === "dive") {
-            drawW *= 3;
-            drawH *= 1.2;
-
-            keeper.x = lerp(keeper.x, keeper.tx, 0.22);
+            // drawW *= 3;
+            // drawH *= 1.2;
+            keeper.x = lerp(keeper.x, keeper.tx, 0.1);
         }
+
+        // Calculate animation variables
+        const t = performance.now() * 0.004;
+
+        // Only apply bob and sway when standing idle
+        const isIdle = keeper.state !== "dive";
+        const bob = isIdle ? Math.sin(t) * 2.5 : 0;
+        const sway = isIdle ? Math.sin(t * 0.6) * 1.5 : 0;
 
         let img = IMG.keeperIdle;
 
@@ -835,19 +893,76 @@
         ctx.imageSmoothingEnabled = false;
 
         if (img.complete && img.naturalWidth) {
-            ctx.drawImage(img, Math.floor(keeper.x - keeper.w / 2), Math.floor(sy - keeper.h / 2), keeper.w, keeper.h);
+            ctx.drawImage(
+                img,
+                Math.floor(keeper.x - drawW / 2 + sway), // Added sway
+                Math.floor(sy - drawH / 2 + bob),        // Added bob
+                drawW,
+                drawH
+            );
         } else {
-            drawPixelHuman(keeper.x, sy + 35, "#ef476f", "#f5c49b");
+            drawPixelHuman(
+                Math.floor(keeper.x + sway),             // Added sway
+                Math.floor(sy + 35 + bob),               // Added bob
+                "#ef476f",
+                "#f5c49b"
+            );
         }
-        ctx.drawImage(
-            img,
-            keeper.x - drawW / 2,
-            sy - drawH / 2,
-            drawW,
-            drawH
-        );
+
         ctx.restore();
     }
+    // function drawKeeper() {
+    //     let drawW = keeper.w;
+    //     let drawH = keeper.h;
+    //     const t =
+    //         performance.now() * 0.004;
+
+    //     const bob =
+    //         Math.sin(t) * 2.5;
+
+    //     const sway =
+    //         Math.sin(t * 0.6) * 1.5;
+    //     const sy = keeper.y - cameraY;
+    //     if (sy < -140 || sy > H + 140) return;
+
+
+    //     if (keeper.state === "dive") {
+    //         drawW *= 3;
+    //         drawH *= 1.2;
+
+    //         keeper.x = lerp(keeper.x, keeper.tx, 0.22);
+    //     }
+
+    //     let img = IMG.keeperIdle;
+
+    //     if (keeper.diveFrame === "left") img = IMG.keeperLeft;
+    //     if (keeper.diveFrame === "right") img = IMG.keeperRight;
+
+    //     ctx.save();
+    //     ctx.imageSmoothingEnabled = false;
+
+    //     if (img.complete && img.naturalWidth) {
+
+    //         ctx.drawImage(
+    //             img,
+    //             keeper.x - drawW / 2,
+    //             sy - drawH / 2,
+    //             drawW,
+    //             drawH
+    //         );
+
+    //     } else {
+
+    //         drawPixelHuman(
+    //             keeper.x,
+    //             sy + 35,
+    //             "#ef476f",
+    //             "#f5c49b"
+    //         );
+
+    //     }
+    //     ctx.restore();
+    // }
 
     function drawBall() {
         for (let i = 0; i < ball.trail.length; i++) {
@@ -863,7 +978,6 @@
         ctx.globalAlpha = 1;
 
         const s = worldToScreen(ball.x, ball.y);
-
         ctx.save();
         ctx.imageSmoothingEnabled = false;
 
