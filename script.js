@@ -86,6 +86,14 @@
     const HIDDEN_GOAL_WORLD_Y = 2200;
     const BALL_IDLE_SCREEN_Y_RATIO = 0.53;
     const DIRECT_SHOT_MAX_DISTANCE = 1000;
+
+    // Fixed-screen layout values. These keep the goal and goalkeeper below
+    // the scoreboard on short displays such as the iPhone SE.
+    const SCOREBOARD_Y = 8;
+    const SCOREBOARD_TOP_H = 49;
+    const SCOREBOARD_BOTTOM_H = 41;
+    const SCOREBOARD_FRAME_OVERFLOW = 6;
+    const SCOREBOARD_TO_GOAL_GAP = 42;
     const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
     const lerp = (a, b, t) => a + (b - a) * t;
     const ease = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
@@ -98,6 +106,19 @@
 
     function randInt(a, b) {
         return Math.floor(a + Math.random() * (b - a + 1));
+    }
+
+    function getIdleCameraY() {
+        const scoreboardBottom =
+            SCOREBOARD_Y +
+            SCOREBOARD_TOP_H +
+            SCOREBOARD_BOTTOM_H +
+            SCOREBOARD_FRAME_OVERFLOW;
+
+        const desiredGoalScreenY =
+            scoreboardBottom + SCOREBOARD_TO_GOAL_GAP;
+
+        return opponentGoal.y - desiredGoalScreenY;
     }
 
     function hideLegacyHud() {
@@ -230,8 +251,8 @@
         shot = null;
         kickQueued = false;
         kickTimer = 0;
-        targetCameraY =
-            ball.y - H * BALL_IDLE_SCREEN_Y_RATIO;
+        // Keep the visible goal safely below the fixed scoreboard.
+        targetCameraY = getIdleCameraY();
 
         if (instant) {
             cameraY = targetCameraY;
@@ -797,10 +818,12 @@
             else if (shot?.type === "direct") updateDirect(dt);
         }
 
+        // Normal shots keep the penalty scene fixed and readable.
+        // Only the secret reverse route is allowed to move the camera.
         const cameraFocusY =
-            ball.moving
+            ball.moving && shot?.type === "reverse"
                 ? ball.y - H * 0.65
-                : ball.y - H * BALL_IDLE_SCREEN_Y_RATIO;
+                : getIdleCameraY();
 
         targetCameraY = cameraFocusY;
 
@@ -1355,10 +1378,10 @@ ctx.setLineDash([]);
     }
 function drawScoreboard() {
     const x = 9;
-    const y = 8;
+    const y = SCOREBOARD_Y;
     const w = W - 18;
-    const topH = 49;
-    const bottomH = 41;
+    const topH = SCOREBOARD_TOP_H;
+    const bottomH = SCOREBOARD_BOTTOM_H;
     const totalH = topH + bottomH;
 
     // Future-proof data
